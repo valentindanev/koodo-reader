@@ -1381,5 +1381,13 @@
   "Failed to recognize title": "Failed to recognize title",
   "Show total page number (Experimental)": "Show total page number (Experimental)",
   "This version of Koodo Reader is too old. Please go to Settings - About - Check for Updates to update Koodo Reader to the latest version and try again.": "This version of Koodo Reader is too old. Please go to Settings - About - Check for Updates to update Koodo Reader to the latest version and try again.",
-  "Background opacity": "Background opacity"
+  "Background opacity": "Background opacity",
+  "Voice integrations": "Voice integrations",
+  "System voices": "System voices",
+  "Local Kokoro - this PC": "Local Kokoro - this PC",
+  "Koodo official voices (Pro)": "Koodo official voices (Pro)",
+  "Show only the integrations you want in the voice menu. Hiding an integration stops reading.": "Show only the integrations you want in the voice menu. Hiding an integration stops reading.",
+  "Enable an integration with available voices to read aloud.": "Enable an integration with available voices to read aloud.",
+  "Choose a voice": "Choose a voice",
+  "Choose a voice from an enabled integration": "Choose a voice from an enabled integration"
 }

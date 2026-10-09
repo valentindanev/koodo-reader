@@ -19,6 +19,8 @@ export interface TextToSpeechProps {
   t: (title: string) => string;
 }
 export interface TextToSpeechState {
+  hiddenVoiceProviders: string[];
+  isUpdatingProviders: boolean;
   isSupported: boolean;
   isAudioOn: boolean;
   isPaused: boolean;
