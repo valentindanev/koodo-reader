@@ -19,6 +19,7 @@ import {
 import { isElectron } from "react-device-detect";
 import toast from "react-hot-toast";
 import TTSUtil from "../../utils/reader/ttsUtil";
+import { parseHiddenProviders, visibleVoices, availableVoice, providerKey } from "../../utils/reader/voiceProviders";
 import { getTextRules } from "../../utils/common";
 import "./textToSpeech.css";
 import { fetchUserInfo } from "../../utils/request/user";
@@ -43,6 +44,8 @@ class TextToSpeech extends React.Component<
     super(props);
     this.highlightUtil = new HighlightUtil(ConfigService);
     this.state = {
+      hiddenVoiceProviders: parseHiddenProviders(ConfigService.getReaderConfig("hiddenVoiceProviders")),
+      isUpdatingProviders: false,
       isSupported: false,
       isAudioOn: false,
       isPaused: false,
@@ -98,9 +101,11 @@ class TextToSpeech extends React.Component<
       return new Promise((resolve) => {
         let synth = window.speechSynthesis;
         let id;
+        let attempts = 0;
         if (synth) {
           id = setInterval(() => {
-            if (synth.getVoices().length !== 0) {
+            attempts++;
+            if (synth.getVoices().length !== 0 || attempts >= 200) {
               let voices = synth.getVoices();
               resolve(
                 voices.map((item) => {
@@ -115,20 +120,22 @@ class TextToSpeech extends React.Component<
               this.setState({ isSupported: false });
             }
           }, 10);
+        } else {
+          resolve([]);
         }
       });
     };
     this.nativeVoices = await setSpeech();
     if (isElectron) {
       this.customVoices = TTSUtil.getVoiceList(this.props.plugins);
-      this.voices = [...this.nativeVoices, ...this.customVoices];
+      this.voices = visibleVoices([...this.nativeVoices, ...this.customVoices], this.state.hiddenVoiceProviders);
     } else {
       this.customVoices = getAllVoices(
         this.props.plugins.filter(
           (item) => item.key === "official-ai-voice-plugin"
         )
       );
-      this.voices = [...this.nativeVoices, ...this.customVoices];
+      this.voices = visibleVoices([...this.nativeVoices, ...this.customVoices], this.state.hiddenVoiceProviders);
     }
     this.handleVoiceLocaleList();
     if (
@@ -166,14 +173,15 @@ class TextToSpeech extends React.Component<
         let defaultVoice =
           this.voices.find(
             (item) => item.plugin !== "official-ai-voice-plugin"
-          ) || this.voices[0];
-        ConfigService.setReaderConfig("voiceName", defaultVoice.name);
+          );
+        ConfigService.setReaderConfig("voiceName", defaultVoice?.name || "");
         ConfigService.setReaderConfig(
           "voiceEngine",
-          defaultVoice.plugin || "system"
+          defaultVoice ? providerKey(defaultVoice) : ""
         );
       }
     }
+    this.handleVoiceLocaleList();
   }
   UNSAFE_componentWillReceiveProps(
     nextProps: Readonly<TextToSpeechProps>,
@@ -181,8 +189,9 @@ class TextToSpeech extends React.Component<
   ): void {
     //plugin更新后重新获取语音列表
     if (nextProps.plugins !== this.props.plugins) {
-      this.customVoices = TTSUtil.getVoiceList(nextProps.plugins);
-      this.voices = [...this.nativeVoices, ...this.customVoices];
+      this.customVoices = TTSUtil.getVoiceList(isElectron ? nextProps.plugins :
+        nextProps.plugins.filter((plugin) => plugin.key === "official-ai-voice-plugin"));
+      this.voices = visibleVoices([...this.nativeVoices, ...this.customVoices], this.state.hiddenVoiceProviders);
       this.handleVoiceLocaleList();
     }
     if (nextProps.currentBook?.key !== this.props.currentBook?.key) {
@@ -384,6 +393,15 @@ class TextToSpeech extends React.Component<
     return voiceList;
   };
   handleStartAudio = async () => {
+    if (this.state.isUpdatingProviders) return;
+    const selected = this.voices?.find((voice) =>
+      voice.name === ConfigService.getReaderConfig("voiceName") &&
+      providerKey(voice) === ConfigService.getReaderConfig("voiceEngine")
+    );
+    if (!selected) {
+      toast(this.props.t("Choose a voice from an enabled integration"));
+      return;
+    }
     if (
       this.props.isAuthed &&
       ConfigService.getReaderConfig("voiceEngine") !== "system"
@@ -398,7 +416,8 @@ class TextToSpeech extends React.Component<
         "official-ai-voice-plugin" &&
       !this.props.isAuthed
     ) {
-      ConfigService.setReaderConfig("voiceEngine", "system");
+      toast(this.props.t("Please upgrade to Pro to use this feature"));
+      return;
     }
     // 每次开始朗读前刷新文本规则（replace / delete）
     TTSUtil.setTextRules(getTextRules(this.props.currentBook?.key));
@@ -949,6 +968,42 @@ class TextToSpeech extends React.Component<
       };
     });
   };
+  getVoiceProviders = () => {
+    const providers = new Map<string, string>();
+    providers.set("system", this.props.t("System voices"));
+    this.props.plugins.filter((plugin) => plugin.type === "voice").forEach((plugin) => {
+      if (!isElectron && plugin.key !== "official-ai-voice-plugin") return;
+      providers.set(plugin.key, plugin.key === "official-ai-voice-plugin"
+          ? this.props.t("Koodo official voices (Pro)")
+          : plugin.displayName || plugin.key);
+    });
+    [...(this.nativeVoices || []), ...(this.customVoices || [])].forEach((voice) => {
+      const key = providerKey(voice);
+      if (!providers.has(key)) providers.set(key, key);
+    });
+    return Array.from(providers, ([key, label]) => ({ key, label }));
+  };
+  handleProviderVisibility = async (key: string, visible: boolean) => {
+    if (this.state.isUpdatingProviders) return;
+    this.setState({ isUpdatingProviders: true });
+    try {
+      // Stop queued narration before a provider can be hidden.
+      if (!visible) {
+        this.stopPreviewAudio();
+        if (this.state.isAudioOn) await this.handleStop();
+      }
+      const hiddenVoiceProviders = visible
+        ? this.state.hiddenVoiceProviders.filter((item) => item !== key)
+        : Array.from(new Set([...this.state.hiddenVoiceProviders, key]));
+      ConfigService.setReaderConfig("hiddenVoiceProviders", JSON.stringify(hiddenVoiceProviders));
+      this.voices = visibleVoices(
+        [...(this.nativeVoices || []), ...(this.customVoices || [])], hiddenVoiceProviders
+      );
+      this.setState({ hiddenVoiceProviders }, () => this.handleVoiceLocaleList());
+    } finally {
+      this.setState({ isUpdatingProviders: false });
+    }
+  };
   handleVoiceLocaleList = () => {
     let voiceList = {};
     let totalVoiceList = this.voices;
@@ -977,7 +1032,35 @@ class TextToSpeech extends React.Component<
         return a.lang.localeCompare(b.lang);
       })
       .map((item) => item.lang);
-    this.setState({ languageList, voiceList });
+    const chosen = availableVoice(this.voices || [],
+      ConfigService.getReaderConfig("voiceName"),
+      ConfigService.getReaderConfig("voiceEngine"), this.state.voiceLocale);
+    ConfigService.setReaderConfig("voiceName", chosen?.name || "");
+    ConfigService.setReaderConfig("voiceEngine", chosen ? providerKey(chosen) : "");
+    const voiceLocale = voiceList[this.state.voiceLocale]
+      ? this.state.voiceLocale : chosen?.locale || languageList[0] || "";
+    ConfigService.setReaderConfig("voiceLocale", voiceLocale);
+    const roles = {};
+    ["Narrator", "Male", "Female", "Child"].forEach((role) => {
+      const nameKey = `multiRole${role}Voice`;
+      const engineKey = `multiRole${role}Engine`;
+      const name = ConfigService.getReaderConfig(nameKey);
+      const engine = ConfigService.getReaderConfig(engineKey);
+      if (!this.voices.some((voice) => voice.name === name && providerKey(voice) === engine)) {
+        ConfigService.setReaderConfig(nameKey, "");
+        ConfigService.setReaderConfig(engineKey, "");
+        roles[nameKey] = "";
+        roles[engineKey] = "";
+      }
+    });
+    const availableTypes = ["system", "official-ai-voice-plugin", "custom"].filter((type) =>
+      this.voices.some((voice) => type === "custom"
+        ? providerKey(voice) !== "system" && providerKey(voice) !== "official-ai-voice-plugin"
+        : providerKey(voice) === type));
+    const multiRoleVoiceType = availableTypes.includes(this.state.multiRoleVoiceType)
+      ? this.state.multiRoleVoiceType : availableTypes[0] || "";
+    ConfigService.setReaderConfig("multiRoleVoiceType", multiRoleVoiceType);
+    this.setState({ languageList, voiceList, voiceLocale, multiRoleVoiceType, ...roles });
   };
   render() {
     return (
@@ -1106,6 +1189,22 @@ class TextToSpeech extends React.Component<
             </div>
           )}
         </div>
+        <details className="tts-provider-menu">
+          <summary>{this.props.t("Voice integrations")}</summary>
+          <p>{this.props.t("Show only the integrations you want in the voice menu. Hiding an integration stops reading.")}</p>
+          {this.getVoiceProviders().map(({ key, label }) => (
+            <label className="tts-provider-option" key={key}>
+              <input type="checkbox"
+                checked={!this.state.hiddenVoiceProviders.includes(key)}
+                disabled={this.state.isUpdatingProviders}
+                onChange={(event) => this.handleProviderVisibility(key, event.target.checked)} />
+              <span>{label}</span>
+            </label>
+          ))}
+          {(!this.voices || this.voices.length === 0) && (
+            <p role="status">{this.props.t("Enable an integration with available voices to read aloud.")}</p>
+          )}
+        </details>
         <div
           className="setting-dialog-new-title"
           style={{
@@ -1120,7 +1219,7 @@ class TextToSpeech extends React.Component<
             name=""
             className="lang-setting-dropdown"
             id="text-speech-locale"
-            value={ConfigService.getReaderConfig("voiceLocale")}
+            value={this.state.voiceLocale}
             onChange={(event) => {
               ConfigService.setReaderConfig("voiceLocale", event.target.value);
               this.setState({ voiceLocale: event.target.value });
@@ -1161,7 +1260,6 @@ class TextToSpeech extends React.Component<
               let [voiceName, plugin] = selectedValue.split("#");
               const previousEngine =
                 ConfigService.getReaderConfig("voiceEngine");
-              ConfigService.setReaderConfig("voiceName", voiceName);
               let voice = this.voices.find(
                 (item) => item.name === voiceName && item.plugin === plugin
               );
@@ -1180,6 +1278,7 @@ class TextToSpeech extends React.Component<
                 this.props.handleSettingMode("account");
                 return;
               }
+              ConfigService.setReaderConfig("voiceName", voiceName);
               ConfigService.setReaderConfig("voiceEngine", newEngine);
               if (
                 voice.plugin === "official-ai-voice-plugin" &&
@@ -1202,7 +1301,8 @@ class TextToSpeech extends React.Component<
               this.forceUpdate();
             }}
           >
-            {(this.state.voiceList[this.state.voiceLocale] || this.voices).map(
+            <option value="">{this.props.t("Choose a voice")}</option>
+            {(this.state.voiceList[this.state.voiceLocale] || this.voices || []).map(
               (item) => {
                 return (
                   <option
@@ -1353,18 +1453,24 @@ class TextToSpeech extends React.Component<
                 <option value="" className="lang-setting-option">
                   {this.props.t("Please select")}
                 </option>
+                {this.getVoicesByType("system").length > 0 && (
                 <option value="system" className="lang-setting-option">
                   {this.props.t("System voice")}
                 </option>
+                )}
+                {this.getVoicesByType("official-ai-voice-plugin").length > 0 && (
                 <option
                   value="official-ai-voice-plugin"
                   className="lang-setting-option"
                 >
                   {this.props.t("Official AI Voice")}
                 </option>
+                )}
+                {this.getVoicesByType("custom").length > 0 && (
                 <option value="custom" className="lang-setting-option">
                   {this.props.t("Custom voice")}
                 </option>
+                )}
               </select>
             </div>
             {/* Narrator voice */}

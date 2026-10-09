@@ -115,3 +115,9 @@
   opacity: 1;
   background: rgba(128, 128, 128, 0.15);
 }
+
+.tts-provider-menu { margin: 12px 20px; width: calc(100% - 40px); }
+.tts-provider-menu summary { cursor: pointer; font-weight: 500; }
+.tts-provider-menu p { font-size: 12px; line-height: 1.5; opacity: 0.8; }
+.tts-provider-option { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
+.tts-provider-option input { accent-color: currentColor; }
