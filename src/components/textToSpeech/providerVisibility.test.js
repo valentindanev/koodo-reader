@@ -129,8 +129,9 @@ test("sentence follow runs only in continuous text mode, preserving both paginat
   for (const mode of ["single", "double", "scroll"]) {
     const reader = new TextToSpeech({ readerMode: mode, currentBook: { format: "EPUB" }, htmlBook: { rendition: {} } });
     reader.nodeList = [{ text: "Sentence." }];
-    reader.narrationFollow.follow = jest.fn();
+    reader.activeNarrationRange = {};
+    reader.narrationFollow.followRange = jest.fn();
     reader.followSentence(0);
-    expect(reader.narrationFollow.follow).toHaveBeenCalledTimes(mode === "scroll" ? 1 : 0);
+    expect(reader.narrationFollow.followRange).toHaveBeenCalledTimes(mode === "scroll" ? 1 : 0);
   }
 });

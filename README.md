@@ -1,4 +1,4 @@
-> **Modified version by Valentin Danev, 09-10-2026.** This fork adds voice-integration visibility controls. Based on [Koodo Reader](https://github.com/koodo-reader/koodo-reader), under AGPLv3. See [LAB_CHANGES.md](LAB_CHANGES.md) for changes and validation.
+> **Modified version by Valentin Danev, 09-10-2026.** This fork adds voice-integration visibility controls, a content-sized narration panel, smooth continuous-scroll following and reliable sentence highlighting. Based on [Koodo Reader](https://github.com/koodo-reader/koodo-reader), under AGPLv3. See [LAB_CHANGES.md](LAB_CHANGES.md) for changes and validation.
 
 <div align="left">
 

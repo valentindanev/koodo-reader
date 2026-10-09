@@ -20,6 +20,7 @@ import { isElectron } from "react-device-detect";
 import toast from "react-hot-toast";
 import TTSUtil from "../../utils/reader/ttsUtil";
 import { NarrationFollow } from "../../utils/reader/narrationFollow";
+import { clearNarrationHighlight, paintNarrationRange } from "../../utils/reader/narrationHighlight";
 import { parseHiddenProviders, visibleVoices, availableVoice, providerKey } from "../../utils/reader/voiceProviders";
 import { getTextRules } from "../../utils/common";
 import "./textToSpeech.css";
@@ -42,10 +43,26 @@ class TextToSpeech extends React.Component<
   previewPlayer: Howl | null;
   highlightUtil: any;
   narrationFollow = new NarrationFollow();
+  activeNarrationRange?: Range;
+  highlightSentence = (index: number, style: string) => {
+    const rendition = this.props.htmlBook.rendition;
+    this.activeNarrationRange = undefined;
+    if (isReadingRawPDF(this.props.currentBook)) {
+      rendition.highlightAudioNode(this.nodeList[index].text, style);
+      return;
+    }
+    const doc = rendition.getDocument?.();
+    if (!doc) return;
+    clearNarrationHighlight(doc);
+    const range = this.narrationFollow.locate(rendition, this.nodeList[index].text, this.nodeList, index);
+    if (range) this.activeNarrationRange = paintNarrationRange(range, style);
+  };
   followsContinuousText = () => this.props.readerMode === "scroll" && !isReadingRawPDF(this.props.currentBook);
   followSentence = (index: number) => {
     if (this.followsContinuousText()) {
-      this.narrationFollow.follow(this.props.htmlBook.rendition, this.nodeList[index].text, this.nodeList, index);
+      if (this.activeNarrationRange) {
+        this.narrationFollow.followRange(this.props.htmlBook.rendition, this.activeNarrationRange);
+      }
     }
   };
   constructor(props: TextToSpeechProps) {
@@ -746,7 +763,7 @@ class TextToSpeech extends React.Component<
         isReadingRawPDF(this.props.currentBook),
         ConfigService.getReaderConfig("textOrientation") === "vertical"
       );
-      this.props.htmlBook.rendition.highlightAudioNode(node.text, style);
+      this.highlightSentence(index, style);
       if (index === nodeIndex) {
         let result = await TTSUtil.cacheAudio(
           index,
@@ -852,7 +869,7 @@ class TextToSpeech extends React.Component<
       isReadingRawPDF(this.props.currentBook),
       ConfigService.getReaderConfig("textOrientation") === "vertical"
     );
-    this.props.htmlBook.rendition.highlightAudioNode(node.text, style);
+    this.highlightSentence(index, style);
     toast.dismiss("tts-load");
     this.followSentence(index);
     let res = await this.handleSystemSpeech(
