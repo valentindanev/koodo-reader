@@ -29,8 +29,9 @@ class SpeechDialog extends React.Component<
             top: "auto",
             bottom: "60px",
             width: "300px",
-            height: "340px",
-            overflowY: "scroll",
+            height: "auto",
+            maxHeight: "calc(100vh - 80px)",
+            overflowY: "auto",
             right: this.props.isSettingLocked || this.props.isDockedRight ? 370 : 65,
           }}
         >
