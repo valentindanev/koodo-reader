@@ -21,6 +21,7 @@ jest.mock("../../constants/dropdownList", () => ({ speedList: { option: [] } }))
 jest.mock("../../utils/common", () => ({
   getAllVoices: (plugins) => plugins.flatMap((plugin) => plugin.voiceList || []),
   langToName: (lang) => lang,
+  isReadingRawPDF: (book) => book?.format === "PDF",
 }));
 jest.mock("../../utils/reader/ttsUtil", () => ({
   getVoiceList: (plugins) => plugins.flatMap((plugin) => plugin.voiceList || []),
@@ -122,4 +123,14 @@ test("provider identity distinguishes same-named voices and never chooses a paid
   expect(visibleVoices([local, official], [officialKey])).toEqual([local]);
   expect(parseHiddenProviders('{broken')).toEqual([]);
   expect(parseHiddenProviders('["system",7,"system"]')).toEqual(["system"]);
+});
+
+test("sentence follow runs only in continuous text mode, preserving both paginated modes", () => {
+  for (const mode of ["single", "double", "scroll"]) {
+    const reader = new TextToSpeech({ readerMode: mode, currentBook: { format: "EPUB" }, htmlBook: { rendition: {} } });
+    reader.nodeList = [{ text: "Sentence." }];
+    reader.narrationFollow.follow = jest.fn();
+    reader.followSentence(0);
+    expect(reader.narrationFollow.follow).toHaveBeenCalledTimes(mode === "scroll" ? 1 : 0);
+  }
 });

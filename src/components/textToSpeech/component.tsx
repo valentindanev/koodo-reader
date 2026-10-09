@@ -19,6 +19,7 @@ import {
 import { isElectron } from "react-device-detect";
 import toast from "react-hot-toast";
 import TTSUtil from "../../utils/reader/ttsUtil";
+import { NarrationFollow } from "../../utils/reader/narrationFollow";
 import { parseHiddenProviders, visibleVoices, availableVoice, providerKey } from "../../utils/reader/voiceProviders";
 import { getTextRules } from "../../utils/common";
 import "./textToSpeech.css";
@@ -40,6 +41,13 @@ class TextToSpeech extends React.Component<
   nativeVoices: any;
   previewPlayer: Howl | null;
   highlightUtil: any;
+  narrationFollow = new NarrationFollow();
+  followsContinuousText = () => this.props.readerMode === "scroll" && !isReadingRawPDF(this.props.currentBook);
+  followSentence = (index: number) => {
+    if (this.followsContinuousText()) {
+      this.narrationFollow.follow(this.props.htmlBook.rendition, this.nodeList[index].text, this.nodeList, index);
+    }
+  };
   constructor(props: TextToSpeechProps) {
     super(props);
     this.highlightUtil = new HighlightUtil(ConfigService);
@@ -771,6 +779,7 @@ class TextToSpeech extends React.Component<
         false,
         node.voiceEngine === "official-ai-voice-plugin"
       );
+      this.followSentence(index);
       let res = await this.handleSpeech(index);
       if (res === "error") {
         toast.error(this.props.t("Audio loading failed, stopped playback"));
@@ -798,7 +807,7 @@ class TextToSpeech extends React.Component<
         isReachPageEnd = true;
       }
 
-      if (isReachPageEnd) {
+      if (isReachPageEnd && (!this.followsContinuousText() || index === this.nodeList.length - 1)) {
         if (isReadingRawPDF(this.props.currentBook)) {
           let currentPosition = this.props.htmlBook.rendition.getPosition();
           await this.props.htmlBook.rendition.goToChapterIndex(
@@ -845,6 +854,7 @@ class TextToSpeech extends React.Component<
     );
     this.props.htmlBook.rendition.highlightAudioNode(node.text, style);
     toast.dismiss("tts-load");
+    this.followSentence(index);
     let res = await this.handleSystemSpeech(
       index,
       node.voiceName || ConfigService.getReaderConfig("voiceName"),
@@ -871,7 +881,7 @@ class TextToSpeech extends React.Component<
       if (index === this.nodeList.length - 1) {
         isReachPageEnd = true;
       }
-      if (isReachPageEnd) {
+      if (isReachPageEnd && (!this.followsContinuousText() || index === this.nodeList.length - 1)) {
         if (isReadingRawPDF(this.props.currentBook)) {
           let currentPosition = this.props.htmlBook.rendition.getPosition();
           await this.props.htmlBook.rendition.goToChapterIndex(
